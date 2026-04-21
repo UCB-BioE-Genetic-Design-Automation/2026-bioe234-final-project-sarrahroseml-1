@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "creseq-mcp"
+version = "0.1.0"
+description = "MCP-based CRE-seq analysis toolkit"
+requires-python = ">=3.11"
+dependencies = [
+    "mcp>=1.0.0",
+    "pandas>=2.0",
+    "numpy>=1.26",
+    "pydantic>=2.0",
+    "scipy>=1.11",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "pytest-cov"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["creseq_mcp*"]
