@@ -295,48 +295,132 @@ elif page == "📊 QC & Plots":
     df = st.session_state.data
 
     tab_qc, tab_activity, tab_motif, tab_variant = st.tabs(
-        ["🔬 QC Metrics", "📈 Activity Plots", "🔡 Motif Analysis", "🧪 Variant Effects"]
+        ["🔬 Library QC", "📈 Activity Plots", "🔡 Motif Analysis", "🧪 Variant Effects"]
     )
 
-    # ── QC Metrics ─────────────────────────────────────────────────────────
+    # ── Library QC ──────────────────────────────────────────────────────────
     with tab_qc:
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Total elements", f"{len(df):,}")
-        col2.metric("Median DNA counts", f"{df['dna_counts'].median():.1f}")
-        col3.metric("Median RNA counts", f"{df['rna_counts'].median():.1f}")
-        col4.metric("Low-coverage (<5 DNA)", f"{(df['dna_counts'] < 5).sum():,}")
+        _mt = UPLOAD_DIR / "mapping_table.tsv"
+        _pc = UPLOAD_DIR / "plasmid_counts.tsv"
+        _dm = UPLOAD_DIR / "design_manifest.tsv"
 
-        c1, c2 = st.columns(2)
-        with c1:
-            fig = px.histogram(
-                df, x="dna_counts", nbins=50,
-                title="DNA Count Distribution",
-                labels={"dna_counts": "DNA counts"},
-                color_discrete_sequence=["#4C78A8"],
-            )
-            fig.update_layout(showlegend=False)
-            st.plotly_chart(fig, use_container_width=True)
+        if not _mt.exists():
+            st.info("No mapping_table.tsv found. Complete the Upload pipeline first.", icon="ℹ️")
+        else:
+            if "qc_report" not in st.session_state:
+                st.session_state.qc_report = None
 
-        with c2:
-            fig = px.histogram(
-                df, x="rna_counts", nbins=50,
-                title="RNA Count Distribution",
-                labels={"rna_counts": "RNA counts"},
-                color_discrete_sequence=["#F58518"],
-            )
-            fig.update_layout(showlegend=False)
-            st.plotly_chart(fig, use_container_width=True)
+            col_run, col_clear = st.columns([1, 4])
+            if col_run.button("▶ Run Library QC"):
+                with st.spinner("Running all QC checks…"):
+                    try:
+                        from creseq_mcp.qc.library import library_summary_report
+                        qc_df, qc_summary = library_summary_report(
+                            str(_mt), str(_pc),
+                            str(_dm) if _dm.exists() else None,
+                        )
+                        st.session_state.qc_report = (qc_df, qc_summary)
+                    except Exception as e:
+                        st.error(f"QC failed: {e}")
 
-        fig = px.scatter(
-            df, x="dna_counts", y="rna_counts",
-            color="active",
-            color_discrete_map={True: "#E45756", False: "#72B7B2"},
-            opacity=0.6,
-            title="RNA vs. DNA Counts per Element",
-            labels={"dna_counts": "DNA counts", "rna_counts": "RNA counts", "active": "Active"},
-            log_x=True, log_y=True,
-        )
-        st.plotly_chart(fig, use_container_width=True)
+            if st.session_state.qc_report is not None:
+                qc_df, qc_summary = st.session_state.qc_report
+                overall = qc_summary.get("overall_pass", False)
+                failed = qc_summary.get("failed_checks", [])
+                warnings = qc_summary.get("warnings", [])
+
+                if overall:
+                    st.success("✅ Library QC: **PASS** — all checks passed", icon="✅")
+                else:
+                    st.error(f"❌ Library QC: **FAIL** — failed checks: {', '.join(failed)}", icon="❌")
+                if warnings:
+                    for w in warnings:
+                        st.warning(w)
+
+                tool_results = qc_summary.get("tool_results", {})
+
+                # Per-tool summary cards
+                tool_labels = {
+                    "barcode_complexity": "Barcode Complexity",
+                    "oligo_recovery": "Oligo Recovery",
+                    "synthesis_error_profile": "Synthesis Errors",
+                    "barcode_collision_analysis": "Barcode Collisions",
+                    "barcode_uniformity": "Barcode Uniformity",
+                    "plasmid_depth_summary": "Plasmid Depth",
+                    "gc_content_bias": "GC Content Bias",
+                    "oligo_length_qc": "Oligo Length QC",
+                    "variant_family_coverage": "Variant Family Coverage",
+                }
+                cols = st.columns(3)
+                for i, (tool_key, label) in enumerate(tool_labels.items()):
+                    res = tool_results.get(tool_key, {})
+                    passed = res.get("pass", None)
+                    badge = "✅" if passed else ("❌" if passed is False else "⚪")
+                    with cols[i % 3]:
+                        st.markdown(f"**{badge} {label}**")
+
+                st.divider()
+
+                # Charts using per-tool DataFrames from qc_df
+                if "tool" in qc_df.columns:
+                    for tool_key, label in tool_labels.items():
+                        tool_df = qc_df[qc_df["tool"] == tool_key] if "tool" in qc_df.columns else pd.DataFrame()
+                        res = tool_results.get(tool_key, {})
+
+                        if tool_key == "barcode_complexity" and not tool_df.empty and "n_barcodes" in tool_df.columns:
+                            with st.expander(f"📊 {label}"):
+                                fig = px.histogram(tool_df, x="n_barcodes", nbins=40,
+                                    title="Barcodes per Oligo", labels={"n_barcodes": "Barcodes"},
+                                    color_discrete_sequence=["#4C78A8"])
+                                st.plotly_chart(fig, use_container_width=True)
+                                med = res.get("median_barcodes_per_oligo")
+                                if med:
+                                    st.metric("Median barcodes/oligo", f"{med:.1f}")
+
+                        elif tool_key == "oligo_recovery" and not tool_df.empty:
+                            with st.expander(f"📊 {label}"):
+                                if "category" in tool_df.columns and "recovery_at_10" in tool_df.columns:
+                                    fig = px.bar(tool_df, x="category", y="recovery_at_10",
+                                        title="Recovery at ≥10 Barcodes by Category",
+                                        labels={"recovery_at_10": "Recovery fraction", "category": "Category"},
+                                        color_discrete_sequence=["#54A24B"])
+                                    fig.add_hline(y=0.8, line_dash="dash", line_color="red", annotation_text="80% target")
+                                    st.plotly_chart(fig, use_container_width=True)
+
+                        elif tool_key == "synthesis_error_profile" and not tool_df.empty:
+                            with st.expander(f"📊 {label}"):
+                                rate_cols = [c for c in ["mismatch_rate", "indel_rate", "soft_clip_rate"] if c in tool_df.columns]
+                                if rate_cols:
+                                    means = tool_df[rate_cols].mean().reset_index()
+                                    means.columns = ["Error type", "Rate"]
+                                    fig = px.bar(means, x="Error type", y="Rate",
+                                        title="Mean Synthesis Error Rates",
+                                        color_discrete_sequence=["#E45756"])
+                                    st.plotly_chart(fig, use_container_width=True)
+
+                        elif tool_key == "plasmid_depth_summary" and res:
+                            with st.expander(f"📊 {label}"):
+                                st.metric("Median DNA count", f"{res.get('median_dna_count', 'N/A')}")
+                                st.metric("Zero-count barcodes", f"{res.get('frac_zero_barcodes', 0):.1%}")
+
+                        elif tool_key == "gc_content_bias" and not tool_df.empty and "gc_bin" in tool_df.columns:
+                            with st.expander(f"📊 {label}"):
+                                fig = px.line(tool_df, x="gc_bin", y="recovery_rate",
+                                    title="Recovery Rate by GC Content Bin",
+                                    labels={"gc_bin": "GC content", "recovery_rate": "Recovery rate"},
+                                    markers=True)
+                                st.plotly_chart(fig, use_container_width=True)
+
+                        elif tool_key == "variant_family_coverage" and res:
+                            with st.expander(f"📊 {label}"):
+                                frac = res.get("frac_complete_families", None)
+                                miss_ref = res.get("n_families_missing_reference", None)
+                                if frac is not None:
+                                    st.metric("Complete families", f"{frac:.1%}")
+                                if miss_ref is not None:
+                                    st.metric("Families missing reference", str(miss_ref))
+                else:
+                    st.info("Run Library QC to see per-tool charts.", icon="ℹ️")
 
     # ── Activity Plots ──────────────────────────────────────────────────────
     with tab_activity:
@@ -435,80 +519,117 @@ elif page == "📊 QC & Plots":
     # ── Motif Analysis ──────────────────────────────────────────────────────
     with tab_motif:
         st.subheader("TF Motif Enrichment")
-        st.caption("Enrichment of TF binding motifs in active vs. inactive CREs (HOMER-style).")
+        _act_motif_path = UPLOAD_DIR / "activity_results.tsv"
 
-        motif_data = pd.DataFrame(
-            {
-                "Motif": ["SP1", "AP1 (FOSL2)", "NRF1", "CTCF", "YY1", "ETS1"],
-                "Fold Enrichment": [2.8, 2.1, 1.9, 1.4, 1.2, 1.1],
-                "p-value": [0.0012, 0.0041, 0.0089, 0.031, 0.078, 0.12],
-                "Significant": [True, True, True, False, False, False],
-            }
-        )
-        motif_data["-log10(p)"] = -np.log10(motif_data["p-value"])
+        if _act_motif_path.exists():
+            _motif_act_df = pd.read_csv(_act_motif_path, sep="\t")
+        else:
+            _motif_act_df = pd.DataFrame()
 
-        fig = px.bar(
-            motif_data, x="Motif", y="Fold Enrichment",
-            color="Significant",
-            color_discrete_map={True: "#E45756", False: "#72B7B2"},
-            title="TF Motif Enrichment in Active CREs",
-            text="Fold Enrichment",
-        )
-        fig.update_traces(texttemplate="%{text:.1f}×", textposition="outside")
-        fig.add_hline(y=1.0, line_dash="dash", line_color="gray", annotation_text="no enrichment")
-        st.plotly_chart(fig, use_container_width=True)
+        if "top_motif" in _motif_act_df.columns and "active" in _motif_act_df.columns:
+            try:
+                from creseq_mcp.stats.library import motif_enrichment_summary
+                motif_enr_df, motif_enr_summary = motif_enrichment_summary(str(_act_motif_path))
+                st.info("Showing real motif enrichment from activity_results.tsv", icon="✅")
 
-        st.dataframe(motif_data.drop(columns=["-log10(p)"]), use_container_width=True, hide_index=True)
+                fig = px.bar(
+                    motif_enr_df.head(15), x="motif", y="enrichment_ratio",
+                    color=(motif_enr_df.head(15)["enrichment_ratio"] > 2).map({True: "Enriched", False: "Background"}),
+                    color_discrete_map={"Enriched": "#E45756", "Background": "#72B7B2"},
+                    title="TF Motif Enrichment in Active CREs",
+                    labels={"motif": "Motif", "enrichment_ratio": "Enrichment ratio (active/inactive)"},
+                    text=motif_enr_df.head(15)["enrichment_ratio"].round(2),
+                )
+                fig.update_traces(texttemplate="%{text:.1f}×", textposition="outside")
+                fig.add_hline(y=1.0, line_dash="dash", line_color="gray", annotation_text="no enrichment")
+                st.plotly_chart(fig, use_container_width=True)
+                st.dataframe(motif_enr_df, use_container_width=True, hide_index=True)
 
-        if "top_motif" in df.columns:
-            st.subheader("Motif Hits per Element")
-            motif_freq = df.groupby("top_motif")["active"].agg(["sum", "count"]).reset_index()
-            motif_freq.columns = ["Motif", "Active hits", "Total hits"]
-            motif_freq["Active rate"] = (motif_freq["Active hits"] / motif_freq["Total hits"] * 100).round(1)
-            motif_freq = motif_freq.sort_values("Active rate", ascending=False)
-            fig = px.bar(
-                motif_freq[motif_freq["Motif"] != "None"],
-                x="Motif", y="Active rate",
-                title="Active Rate by Top Motif (%)",
-                color="Active rate",
-                color_continuous_scale="RdBu",
+                motif_freq = (
+                    _motif_act_df.groupby("top_motif")["active"]
+                    .agg(active_hits="sum", total="count")
+                    .reset_index()
+                )
+                motif_freq["active_rate"] = (motif_freq["active_hits"] / motif_freq["total"] * 100).round(1)
+                motif_freq = motif_freq.sort_values("active_rate", ascending=False)
+                fig2 = px.bar(
+                    motif_freq, x="top_motif", y="active_rate",
+                    title="Active Rate by Top Motif (%)",
+                    labels={"top_motif": "Motif", "active_rate": "Active (%)"},
+                    color="active_rate", color_continuous_scale="RdBu",
+                )
+                st.plotly_chart(fig2, use_container_width=True)
+
+            except Exception as e:
+                st.error(f"Motif enrichment failed: {e}")
+        else:
+            st.info(
+                "No motif annotations found. Ask the agent to **annotate motifs** "
+                "(Chat → 'annotate motifs for my data') to enable this tab.",
+                icon="ℹ️",
             )
-            st.plotly_chart(fig, use_container_width=True)
 
     # ── Variant Effects ─────────────────────────────────────────────────────
     with tab_variant:
-        st.subheader("Allele-Specific Activity")
-        st.caption("Regulatory variants with significant allele-specific activity (|Δlog₂| > 0.5, FDR < 10%).")
+        st.subheader("Variant Family Delta Scores")
+        _delta_path = UPLOAD_DIR / "variant_delta_scores.tsv"
 
-        variant_data = pd.DataFrame(
-            {
-                "element_id": [f"CRE_{i:04d}" for i in [42, 107, 183, 201, 256, 289, 299]],
-                "Ref log₂": [2.41, 1.88, 2.05, 1.72, 2.31, 1.61, 1.95],
-                "Alt log₂": [0.63, 0.91, 1.23, 2.51, 1.02, 0.88, 3.12],
-                "Δlog₂": [1.78, 0.97, 0.82, -0.79, 1.29, 0.73, -1.17],
-                "FDR": [0.002, 0.018, 0.041, 0.033, 0.007, 0.068, 0.044],
-                "eQTL overlap": [True, False, True, True, False, False, True],
-            }
-        )
-        variant_data["Direction"] = variant_data["Δlog₂"].apply(
-            lambda x: "Ref > Alt" if x > 0 else "Alt > Ref"
-        )
+        if _delta_path.exists():
+            delta_df = pd.read_csv(_delta_path, sep="\t")
+            st.info(f"Loaded {len(delta_df):,} mutant–reference pairs from variant_delta_scores.tsv", icon="✅")
 
-        fig = px.scatter(
-            variant_data, x="Ref log₂", y="Alt log₂",
-            color="Direction",
-            size=variant_data["Δlog₂"].abs(),
-            hover_data=["element_id", "Δlog₂", "FDR", "eQTL overlap"],
-            title="Allele-Specific Activity: Ref vs. Alt",
-            labels={"Ref log₂": "Reference allele log₂(RNA/DNA)", "Alt log₂": "Alternate allele log₂(RNA/DNA)"},
-        )
-        # diagonal reference line
-        lims = [0, 3.5]
-        fig.add_trace(
-            go.Scatter(x=lims, y=lims, mode="lines", line=dict(dash="dash", color="gray"), showlegend=False)
-        )
-        st.plotly_chart(fig, use_container_width=True)
-        st.dataframe(variant_data, use_container_width=True, hide_index=True)
+            n_sig = int(delta_df["significant"].sum()) if "significant" in delta_df.columns else 0
+            n_fam = delta_df["variant_family"].nunique() if "variant_family" in delta_df.columns else 0
+            col1, col2, col3 = st.columns(3)
+            col1.metric("Mutants tested", f"{len(delta_df):,}")
+            col2.metric("Variant families", f"{n_fam:,}")
+            col3.metric("Significant (FDR < 5%)", f"{n_sig:,}")
+
+            if "ref_log2" in delta_df.columns and "mutant_log2" in delta_df.columns:
+                delta_df["Direction"] = delta_df["delta_log2"].apply(
+                    lambda x: "Gain" if x > 0 else "Loss"
+                )
+                axis_max = max(delta_df[["ref_log2", "mutant_log2"]].abs().max()) * 1.1
+                fig = px.scatter(
+                    delta_df, x="ref_log2", y="mutant_log2",
+                    color="significant" if "significant" in delta_df.columns else "Direction",
+                    color_discrete_map={True: "#E45756", False: "#72B7B2"},
+                    opacity=0.6,
+                    hover_data=["oligo_id", "variant_family", "delta_log2"],
+                    title="Mutant vs. Reference Activity",
+                    labels={"ref_log2": "Reference log₂(RNA/DNA)", "mutant_log2": "Mutant log₂(RNA/DNA)"},
+                )
+                lims = [-axis_max, axis_max]
+                fig.add_trace(go.Scatter(
+                    x=lims, y=lims, mode="lines",
+                    line=dict(dash="dash", color="gray"), showlegend=False,
+                ))
+                st.plotly_chart(fig, use_container_width=True)
+
+            if "delta_log2" in delta_df.columns:
+                top20 = delta_df.reindex(delta_df["delta_log2"].abs().nlargest(20).index)
+                fig2 = px.bar(
+                    top20.sort_values("delta_log2"), x="delta_log2", y="oligo_id",
+                    orientation="h",
+                    color="delta_log2",
+                    color_continuous_scale="RdBu_r",
+                    title="Top 20 Variants by |Δlog₂|",
+                    labels={"delta_log2": "Δlog₂ (mutant − ref)", "oligo_id": "Oligo"},
+                )
+                st.plotly_chart(fig2, use_container_width=True)
+
+            st.download_button(
+                "Download variant_delta_scores.tsv",
+                delta_df.to_csv(sep="\t", index=False).encode(),
+                file_name="variant_delta_scores.tsv",
+                mime="text/tab-separated-values",
+            )
+        else:
+            st.info(
+                "No variant delta scores yet. Ask the agent to compute them "
+                "(Chat → 'compute variant delta scores') or run tool_variant_delta_scores.",
+                icon="ℹ️",
+            )
 
 
 # ══════════════════════════════════════════════════════════════════════════════

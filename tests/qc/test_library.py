@@ -98,8 +98,7 @@ class TestBarcodeComplexity:
                         "oligo_id": f"oligo_{i:03d}",
                         "n_reads": 10,
                         "cigar": "84M",
-                        "md_tag": "84",
-                        "mapq": 40,
+                        "md": "84",
                     }
                 )
         p = tmp_path / "sparse.tsv"
@@ -199,8 +198,7 @@ class TestSynthesisErrorProfile:
                 "oligo_id": f"oligo_{i:03d}",
                 "n_reads": 10,
                 "cigar": "84M",
-                "md_tag": f"42A41",  # one mismatch per barcode
-                "mapq": 40,
+                "md": f"42A41",  # one mismatch per barcode
             }
             for i in range(50)
             for _ in range(5)
@@ -245,8 +243,7 @@ class TestBarcodeCollisionAnalysis:
                         "oligo_id": f"oligo_{i:03d}",
                         "n_reads": 5,
                         "cigar": "84M",
-                        "md_tag": "84",
-                        "mapq": 40,
+                        "md": "84",
                     }
                 )
         # Add some unique barcodes so total > 0
@@ -257,8 +254,7 @@ class TestBarcodeCollisionAnalysis:
                     "oligo_id": "oligo_0000",
                     "n_reads": 5,
                     "cigar": "84M",
-                    "md_tag": "84",
-                    "mapq": 40,
+                    "md": "84",
                 }
             )
         p = tmp_path / "collisions.tsv"

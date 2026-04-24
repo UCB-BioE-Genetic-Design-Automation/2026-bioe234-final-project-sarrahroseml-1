@@ -138,8 +138,7 @@ def mapping_df() -> pd.DataFrame:
                     "oligo_id": oligo_id,
                     "n_reads": n_reads,
                     "cigar": cigar,
-                    "md_tag": md,
-                    "mapq": int(rng.integers(20, 61)),
+                    "md": md,
                 }
             )
     return pd.DataFrame(rows)
@@ -194,8 +193,7 @@ def long_barcode_mapping_path(tmp_path_factory) -> str:
                     "oligo_id": oligo_id,
                     "n_reads": 20,
                     "cigar": cigar,
-                    "md_tag": md,
-                    "mapq": 40,
+                    "md": md,
                 }
             )
     p = tmp_path_factory.mktemp("data") / "long_bc_mapping.tsv"
@@ -246,8 +244,7 @@ def missing_ref_mapping_path(tmp_path_factory, design_manifest_df) -> str:
                     "oligo_id": oligo_id,
                     "n_reads": 20,
                     "cigar": cigar,
-                    "md_tag": md,
-                    "mapq": 40,
+                    "md": md,
                 }
             )
     p = tmp_path_factory.mktemp("data") / "missing_ref_mapping.tsv"
@@ -273,8 +270,7 @@ def low_recovery_mapping_path(tmp_path_factory, design_manifest_df) -> str:
                     "oligo_id": oligo_id,
                     "n_reads": 20,
                     "cigar": cigar,
-                    "md_tag": md,
-                    "mapq": 40,
+                    "md": md,
                 }
             )
     p = tmp_path_factory.mktemp("data") / "low_recovery_mapping.tsv"
@@ -287,6 +283,6 @@ def empty_mapping_path(tmp_path_factory) -> str:
     """Empty mapping table (header only)."""
     p = tmp_path_factory.mktemp("data") / "empty_mapping.tsv"
     pd.DataFrame(
-        columns=["barcode", "oligo_id", "n_reads", "cigar", "md_tag", "mapq"]
+        columns=["barcode", "oligo_id", "n_reads", "cigar", "md"]
     ).to_csv(p, sep="\t", index=False)
     return str(p)

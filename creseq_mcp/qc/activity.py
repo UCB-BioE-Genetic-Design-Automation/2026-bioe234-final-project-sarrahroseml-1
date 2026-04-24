@@ -152,6 +152,88 @@ def call_activity(
     }
 
 
+def compute_variant_delta_scores(
+    activity_results_path: str | Path,
+    design_manifest_path: str | Path,
+    upload_dir: Path | None = None,
+) -> tuple[pd.DataFrame, dict]:
+    """
+    For each variant family, compute delta = mutant_log2_ratio − reference_log2_ratio.
+    Tests significance via z-test across all deltas (BH FDR).
+    Saves variant_delta_scores.tsv when upload_dir is provided.
+    """
+    results = pd.read_csv(activity_results_path, sep="\t")
+    manifest = pd.read_csv(design_manifest_path, sep="\t")
+
+    needed = {"oligo_id", "variant_family", "is_reference"}
+    if not needed.issubset(manifest.columns):
+        raise ValueError(f"design_manifest missing columns: {needed - set(manifest.columns)}")
+
+    df = results.merge(
+        manifest[["oligo_id", "variant_family", "is_reference"]],
+        on="oligo_id", how="left",
+    )
+
+    families = df["variant_family"].dropna().unique()
+    rows = []
+    skipped = 0
+
+    for fam in families:
+        fam_df = df[df["variant_family"] == fam]
+        ref_rows = fam_df[fam_df["is_reference"] == True]
+        if len(ref_rows) == 0:
+            skipped += 1
+            continue
+        ref_log2 = float(ref_rows["log2_ratio"].iloc[0])
+        mutants = fam_df[fam_df["is_reference"] != True]
+        for _, row in mutants.iterrows():
+            rows.append({
+                "oligo_id": row["oligo_id"],
+                "variant_family": fam,
+                "ref_log2": ref_log2,
+                "mutant_log2": float(row["log2_ratio"]),
+                "delta_log2": float(row["log2_ratio"]) - ref_log2,
+            })
+
+    if not rows:
+        return pd.DataFrame(), {
+            "n_families": int(len(families)),
+            "n_families_skipped": skipped,
+            "n_mutants": 0,
+            "warnings": ["No variant families with recovered references found."],
+            "pass": False,
+        }
+
+    delta_df = pd.DataFrame(rows)
+
+    # z-test across all deltas
+    all_deltas = delta_df["delta_log2"].values
+    delta_mean = float(all_deltas.mean())
+    delta_std = max(float(all_deltas.std(ddof=1)), 1e-9)
+    z_scores = (all_deltas - delta_mean) / delta_std
+    pvals = [_norm_sf(z) for z in z_scores]
+    fdrs = _bh_fdr(pvals)
+
+    delta_df["pval"] = pvals
+    delta_df["fdr"] = fdrs
+    delta_df["significant"] = delta_df["fdr"] < 0.05
+
+    if upload_dir is not None:
+        delta_df.to_csv(Path(upload_dir) / "variant_delta_scores.tsv", sep="\t", index=False)
+
+    summary = {
+        "n_families": int(len(families)),
+        "n_families_skipped": skipped,
+        "n_mutants": int(len(delta_df)),
+        "n_significant": int(delta_df["significant"].sum()),
+        "median_abs_delta": round(float(delta_df["delta_log2"].abs().median()), 4),
+        "warnings": [],
+        "pass": True,
+    }
+
+    return delta_df, summary
+
+
 def activity_report(
     dna_counts_path: str | Path,
     rna_counts_path: str | Path,

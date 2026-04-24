@@ -13,6 +13,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import anthropic
 
 from creseq_mcp.server import UPLOAD_DIR, _summary
+from creseq_mcp.qc.activity import compute_variant_delta_scores
+from creseq_mcp.qc.motifs import annotate_top_motifs
 from creseq_mcp.qc.library import (
     barcode_collision_analysis,
     barcode_complexity,
@@ -225,6 +227,44 @@ _TOOLS: list[dict] = [
             "properties": {
                 "dna_counts_path": {"type": "string", "description": "Path to plasmid_counts.tsv (optional)"},
                 "rna_counts_path": {"type": "string", "description": "Path to rna_counts.tsv (optional)"},
+                "design_manifest_path": {"type": "string", "description": "Path to design_manifest.tsv (optional)"},
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "tool_annotate_motifs",
+        "description": (
+            "Annotate each oligo with its top JASPAR TF motif using PWM scanning. "
+            "Fetches PWMs from JASPAR REST API for ~20 liver/HepG2-relevant TFs (or a custom list), "
+            "scans oligo sequences, and adds a top_motif column to activity_results.tsv. "
+            "Run this before tool_motif_enrichment_summary or tool_literature_search_for_motifs."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "activity_results_path": {"type": "string", "description": "Path to activity_results.tsv (optional)"},
+                "design_manifest_path": {"type": "string", "description": "Path to design_manifest.tsv (optional)"},
+                "tf_names": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "List of TF names to scan (optional, defaults to HepG2-relevant TFs)",
+                },
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "tool_variant_delta_scores",
+        "description": (
+            "Compute per-mutant delta = mutant_log2_ratio − reference_log2_ratio for each variant family. "
+            "Tests significance with BH FDR. Requires activity_results.tsv and design_manifest.tsv. "
+            "Saves variant_delta_scores.tsv."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "activity_results_path": {"type": "string", "description": "Path to activity_results.tsv (optional)"},
                 "design_manifest_path": {"type": "string", "description": "Path to design_manifest.tsv (optional)"},
             },
             "required": [],
@@ -477,6 +517,17 @@ _DISPATCH: dict[str, Any] = {
         _p(a, "design_manifest_path", "design_manifest.tsv"),
     ),
     "tool_activity_report": lambda a: _activity_report(a),
+    "tool_annotate_motifs": lambda a: annotate_top_motifs(
+        _p(a, "activity_results_path", "activity_results.tsv"),
+        _p(a, "design_manifest_path", "design_manifest.tsv"),
+        tf_names=a.get("tf_names"),
+        upload_dir=UPLOAD_DIR,
+    ),
+    "tool_variant_delta_scores": lambda a: compute_variant_delta_scores(
+        _p(a, "activity_results_path", "activity_results.tsv"),
+        _p(a, "design_manifest_path", "design_manifest.tsv"),
+        upload_dir=UPLOAD_DIR,
+    ),
     "tool_normalize_activity": lambda a: normalize_activity(
         a["count_table_path"],
         pseudocount=a.get("pseudocount", 1.0),
