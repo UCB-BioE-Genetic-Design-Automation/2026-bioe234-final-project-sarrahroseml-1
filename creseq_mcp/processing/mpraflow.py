@@ -1,18 +1,42 @@
 """
 creseq_mcp/processing/mpraflow.py
 ==================================
-Wrapper around the MPRAflow ASSOCIATION workflow (kircherlab/MPRAflow).
+Wrapper around the MPRAflow ASSOCIATION workflow (shendurelab/MPRAflow).
 
-MPRAflow handles paired-end reads, STARCODE barcode clustering, and BWA
-alignment — giving better barcode error correction and oligo recovery than
-the built-in pipeline.py.
+MPRAflow aligns paired-end reads to the design FASTA with BWA, then links
+barcodes to oligos and filters out low-coverage / ambiguous barcodes.
 
-Requires: nextflow + conda (MPRAflow pulls its own bioinformatics deps).
+Requires: nextflow + conda (MPRAflow manages its own bioinformatics deps).
+
+Note on the kircherlab fork
+---------------------------
+The original kircherlab/MPRAflow (Nextflow) repo was removed by the Kircher
+lab, who now maintain kircherlab/MPRAsnakeflow (Snakemake).  This wrapper
+targets the Shendure-lab Nextflow fork (shendurelab/MPRAflow), which is the
+last maintained Nextflow version.
+
+Parameter mapping vs. kircherlab version:
+  kircherlab --fastq_oligo  →  shendurelab --fastq-insert  (R1, oligo reads)
+  kircherlab --fastq_bc     →  shendurelab --fastq-bc       (R2, barcode reads)
+  kircherlab -entry ASSOCIATION  →  shendurelab -main-script association.nf
+
+Output format
+-------------
+The kircherlab version wrote an assigned_counts.tsv.
+The shendurelab version writes a pickle:
+  {name}_filtered_coords_to_barcodes.pickle
+  → dict  {oligo_id: set(barcode, ...)}
+
+convert_to_qc_format() inverts this to produce mapping_table.tsv,
+plasmid_counts.tsv, and design_manifest.tsv in the standard format.
+n_reads is set to min_cov for all barcodes (they all passed the coverage
+filter, but per-barcode read counts are not in the filtered pickle).
 """
 
 from __future__ import annotations
 
 import logging
+import pickle
 import shutil
 import subprocess
 from pathlib import Path
@@ -22,11 +46,6 @@ import pandas as pd
 from creseq_mcp.processing.pipeline import _make_cigar_md
 
 logger = logging.getLogger(__name__)
-
-# MPRAflow assigned_counts.tsv column names (varies slightly by version)
-_BC_COLS = ("BC", "barcode", "barcode_sequence")
-_ID_COLS = ("name", "oligo_id", "oligo", "element")
-_COUNT_COLS = ("n", "count", "reads", "read_count")
 
 
 def _nextflow_bin() -> str | None:
@@ -42,13 +61,6 @@ def is_available() -> bool:
     return _nextflow_bin() is not None
 
 
-def _find_col(df: pd.DataFrame, candidates: tuple[str, ...]) -> str:
-    for c in candidates:
-        if c in df.columns:
-            return c
-    raise ValueError(f"None of {candidates} found in columns: {list(df.columns)}")
-
-
 def run_mpraflow(
     fastq_bc: Path,
     fastq_oligo: Path,
@@ -57,35 +69,46 @@ def run_mpraflow(
     *,
     name: str = "library",
     profile: str = "conda",
+    fastq_oligo_pe: Path | None = None,
+    min_cov: int = 3,
+    min_frac: float = 0.5,
 ) -> Path:
     """
-    Run MPRAflow ASSOCIATION workflow.
+    Run shendurelab/MPRAflow ASSOCIATION workflow.
 
     Parameters
     ----------
-    fastq_bc    : FASTQ with barcode reads (typically R2)
-    fastq_oligo : FASTQ with oligo reads (typically R1)
-    design_fasta: FASTA of designed oligo sequences
-    outdir      : Directory for MPRAflow output
-    name        : Library name (used in output filenames)
-    profile     : Nextflow profile — "conda" (default) or "docker"
+    fastq_bc       : FASTQ with barcode reads (R2)
+    fastq_oligo    : FASTQ with oligo reads (R1, --fastq-insert)
+    design_fasta   : FASTA of designed oligo sequences
+    outdir         : Directory for MPRAflow output
+    name           : Library name (used in output filenames)
+    profile        : Nextflow profile — "conda" (default) or "docker"
+    fastq_oligo_pe : Optional R2 oligo FASTQ for paired-end insert alignment
+    min_cov        : Minimum barcode coverage to keep (default 3)
+    min_frac       : Minimum fraction mapping to same oligo (default 0.5)
 
     Returns
     -------
-    Path to the assigned_counts TSV produced by MPRAflow.
+    Path to the filtered_coords_to_barcodes pickle produced by MPRAflow.
     """
     outdir.mkdir(parents=True, exist_ok=True)
 
     cmd = [
-        _nextflow_bin(), "run", "kircherlab/MPRAflow",
-        "-entry", "ASSOCIATION",
+        _nextflow_bin(), "run", "shendurelab/MPRAflow",
+        "-main-script", "association.nf",
         "--name", name,
-        "--fastq_bc", str(fastq_bc),
-        "--fastq_oligo", str(fastq_oligo),
+        "--fastq-insert", str(fastq_oligo),
+        "--fastq-bc", str(fastq_bc),
         "--design", str(design_fasta),
         "--outdir", str(outdir),
+        "--min-cov", str(min_cov),
+        "--min-frac", str(min_frac),
         "-profile", profile,
     ]
+
+    if fastq_oligo_pe is not None:
+        cmd += ["--fastq-insertPE", str(fastq_oligo_pe)]
 
     logger.info("Running MPRAflow: %s", " ".join(cmd))
     result = subprocess.run(cmd, capture_output=True, text=True, cwd=outdir)
@@ -96,52 +119,68 @@ def run_mpraflow(
             f"stderr:\n{result.stderr[-3000:]}"
         )
 
-    # MPRAflow writes to: {outdir}/statistic/assigned_counts/{name}.assigned_counts.tsv
-    candidates = list(outdir.glob(f"**/{name}.assigned_counts.tsv"))
+    # Output: {outdir}/{name}/{name}_filtered_coords_to_barcodes.pickle
+    candidates = list(outdir.glob(f"**/{name}_filtered_coords_to_barcodes.pickle"))
     if not candidates:
         raise FileNotFoundError(
-            f"MPRAflow output not found under {outdir}. "
+            f"MPRAflow pickle output not found under {outdir}. "
             "Check the MPRAflow log for errors."
         )
 
     return candidates[0]
 
 
+def _pickle_to_dataframe(pickle_path: Path, min_cov: int = 3) -> pd.DataFrame:
+    """
+    Convert shendurelab MPRAflow pickle to a flat DataFrame.
+
+    The pickle is {oligo_id: set(barcode, ...)} — every barcode in the set
+    passed the min_cov and min_frac filters.  n_reads is set to min_cov as a
+    conservative placeholder (the actual per-barcode counts from the
+    association run are not stored in the filtered pickle).
+
+    Returns DataFrame with columns: barcode, oligo_id, n_reads, cigar, md
+    """
+    with open(pickle_path, "rb") as fh:
+        coords_to_barcodes: dict = pickle.load(fh)
+
+    rows = []
+    for oligo_id, barcodes in coords_to_barcodes.items():
+        for bc in barcodes:
+            rows.append({"barcode": bc, "oligo_id": str(oligo_id)})
+
+    if not rows:
+        return pd.DataFrame(columns=["barcode", "oligo_id", "n_reads", "cigar", "md"])
+
+    df = pd.DataFrame(rows)
+    df["n_reads"] = min_cov
+    df["cigar"] = df["barcode"].apply(lambda bc: f"{len(bc)}M")
+    df["md"] = df["barcode"].apply(lambda bc: str(len(bc)))
+    return df
+
+
 def convert_to_qc_format(
-    assigned_counts_path: Path,
+    pickle_path: Path,
     reference_path: Path,
     upload_dir: Path,
+    min_cov: int = 3,
 ) -> dict:
     """
-    Convert MPRAflow assigned_counts TSV → mapping_table, plasmid_counts,
+    Convert MPRAflow filtered pickle → mapping_table, plasmid_counts,
     design_manifest TSVs in upload_dir.
 
-    Note: CIGAR/MD in the mapping table are set to perfect-match placeholders
-    because MPRAflow's barcode-level output does not include per-read alignment
-    strings.  synthesis_error_profile and oligo_length_qc will therefore report
-    trivially perfect synthesis quality.
+    Note: CIGAR/MD are placeholder perfect-match strings; synthesis_error_profile
+    and oligo_length_qc will report trivially perfect synthesis quality.
+    n_reads = min_cov for all barcodes (conservative lower bound).
     """
-    counts = pd.read_csv(assigned_counts_path, sep="\t")
-
-    bc_col = _find_col(counts, _BC_COLS)
-    id_col = _find_col(counts, _ID_COLS)
-    n_col = _find_col(counts, _COUNT_COLS)
-
-    counts = counts.rename(columns={bc_col: "barcode", id_col: "oligo_id", n_col: "n_reads"})
-
-    # Placeholder CIGAR/MD — barcode matches itself perfectly
-    counts["cigar"] = counts["barcode"].apply(lambda bc: f"{len(bc)}M")
-    counts["md"] = counts["barcode"].apply(lambda bc: str(len(bc)))
-
-    mapping_table = counts[["barcode", "oligo_id", "cigar", "md", "n_reads"]].copy()
+    mapping_table = _pickle_to_dataframe(pickle_path, min_cov=min_cov)
 
     plasmid_counts = mapping_table[["barcode", "oligo_id"]].copy()
     plasmid_counts["dna_count"] = mapping_table["n_reads"]
 
     ref_df = pd.read_csv(reference_path, sep="\t")
-    manifest_cols = ["oligo_id", "sequence", "designed_category"]
-    if "variant_family" in ref_df.columns:
-        manifest_cols.append("variant_family")
+    manifest_cols = [c for c in ["oligo_id", "sequence", "designed_category", "variant_family"]
+                     if c in ref_df.columns]
     design_manifest = ref_df[manifest_cols].drop_duplicates("oligo_id")
 
     mapping_table.to_csv(upload_dir / "mapping_table.tsv", sep="\t", index=False)
@@ -149,7 +188,7 @@ def convert_to_qc_format(
     design_manifest.to_csv(upload_dir / "design_manifest.tsv", sep="\t", index=False)
 
     return {
-        "total_reads": int(mapping_table["n_reads"].sum()),
+        "total_barcodes": len(mapping_table),
         "unique_barcodes": len(plasmid_counts),
         "oligos_represented": mapping_table["oligo_id"].nunique(),
         "oligos_in_reference": len(design_manifest),
@@ -165,11 +204,16 @@ def process_and_save(
     *,
     name: str = "library",
     profile: str = "conda",
+    fastq_oligo_pe: Path | None = None,
+    min_cov: int = 3,
+    min_frac: float = 0.5,
 ) -> dict:
     """Run MPRAflow then convert output to QC-ready TSVs."""
     mpraflow_out = upload_dir / "mpraflow_out"
-    assigned_counts = run_mpraflow(
+    pickle_path = run_mpraflow(
         fastq_bc, fastq_oligo, design_fasta, mpraflow_out,
         name=name, profile=profile,
+        fastq_oligo_pe=fastq_oligo_pe,
+        min_cov=min_cov, min_frac=min_frac,
     )
-    return convert_to_qc_format(assigned_counts, reference_path, upload_dir)
+    return convert_to_qc_format(pickle_path, reference_path, upload_dir, min_cov=min_cov)
