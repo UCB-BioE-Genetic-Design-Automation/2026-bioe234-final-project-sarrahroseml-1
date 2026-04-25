@@ -1,0 +1,30 @@
+name: creseq
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11
+  - pip
+  # scientific core
+  - numpy>=1.26
+  - pandas>=2.0
+  - scipy>=1.11
+  - statsmodels>=0.14
+  # plotting
+  - matplotlib>=3.7
+  - seaborn>=0.12
+  - plotly>=5.0
+  # bioinformatics
+  - biopython>=1.80
+  # UI / agent
+  - streamlit>=1.30
+  - requests>=2.31
+  # testing
+  - pytest>=8.0
+  - pytest-cov
+  - pip:
+    - mcp>=1.0.0
+    - pydantic>=2.0
+    - anthropic>=0.30
+    - pyjaspar>=4.0.0
+    - "creseq-mcp @ file:///Users/bowmannovey/Desktop/BioE-134-Final-Proj"
