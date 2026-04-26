@@ -154,7 +154,6 @@ if page == "📤 Upload":
             )
     else:
         assoc_r1_str = assoc_bc_str = design_fasta_str = labels_path_str = ""
-        existing_mapping_path = existing_manifest_path = None
 
     # ── Counting inputs ──────────────────────────────────────────────────────
     st.subheader("Counting")
