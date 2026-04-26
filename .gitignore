@@ -7,3 +7,4 @@ dist/
 build/
 *.egg
 *.md
+BOWMAN_PROJECT_NOTES.md
