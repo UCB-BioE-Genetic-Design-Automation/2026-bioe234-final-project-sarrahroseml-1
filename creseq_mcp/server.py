@@ -61,6 +61,21 @@ mcp = FastMCP(
     ),
 )
 
+_PAPERS_DIR = Path(__file__).parent / "data" / "papers"
+
+
+@mcp.resource("paper://agarwal2025-lentimpra")
+def paper_agarwal2025() -> str:
+    """
+    Agarwal et al. 2025, Nature — 'Massively parallel characterization of
+    transcriptional regulatory elements'. DOI: 10.1038/s41586-024-08430-9
+
+    Large-scale lentiMPRA of >680,000 cCREs across HepG2, K562 and WTC11 cells.
+    This is the primary reference for the ENCODE HepG2 lentiMPRA dataset
+    (ENCSR463IRX) used by this pipeline.
+    """
+    return (_PAPERS_DIR / "agarwal2025_lentimpra.txt").read_text()
+
 
 def _path(arg: str | None, filename: str) -> str:
     return arg or str(UPLOAD_DIR / filename)

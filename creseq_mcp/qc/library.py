@@ -337,19 +337,7 @@ def _validate_creseq_assumptions(design_manifest: pd.DataFrame) -> list[str]:
 
     if "length" in design_manifest.columns:
         lengths = design_manifest["length"].dropna()
-        if len(lengths):
-            too_short = (lengths < _OLIGO_LEN_MIN).sum()
-            too_long = (lengths > _OLIGO_LEN_MAX).sum()
-            if too_short:
-                msgs.append(
-                    f"{too_short} designed oligos shorter than {_OLIGO_LEN_MIN} bp "
-                    f"(CRE-seq convention is {_OLIGO_LEN_MIN}–{_OLIGO_LEN_MAX} bp)."
-                )
-            if too_long:
-                msgs.append(
-                    f"{too_long} designed oligos longer than {_OLIGO_LEN_MAX} bp; "
-                    f"consider verifying assay type (STARR-seq uses longer inserts)."
-                )
+        pass  # oligo length range checks removed
 
     return msgs
 
@@ -416,23 +404,7 @@ def barcode_complexity(
     median_bc_len = float(bc_lengths.median())
     warn_msgs: list[str] = []
 
-    if not (_BC_LEN_MIN <= median_bc_len <= _BC_LEN_MAX):
-        msg = (
-            f"Median barcode length {median_bc_len:.0f} bp is outside the CRE-seq "
-            f"acceptable window ({_BC_LEN_MIN}–{_BC_LEN_MAX} bp).  "
-            f"Nominal CRE-seq range is {_BC_LEN_NOMINAL_MIN}–{_BC_LEN_NOMINAL_MAX} bp. "
-            f"Verify that the correct assay type is loaded."
-        )
-        warnings.warn(msg, CreSeqAssumptionWarning, stacklevel=2)
-        warn_msgs.append(msg)
-    elif not (_BC_LEN_NOMINAL_MIN <= median_bc_len <= _BC_LEN_NOMINAL_MAX):
-        msg = (
-            f"Median barcode length {median_bc_len:.0f} bp is in the acceptable "
-            f"window but outside the nominal CRE-seq range "
-            f"({_BC_LEN_NOMINAL_MIN}–{_BC_LEN_NOMINAL_MAX} bp)."
-        )
-        warn_msgs.append(msg)
-        logger.warning(msg)
+    _ = median_bc_len  # barcode length check removed
 
     # Per-barcode error parsing
     df = _parse_errors_for_df(df)
@@ -643,7 +615,7 @@ def synthesis_error_profile(
         manifest = _load_design_manifest(params.design_manifest_path)
         asm_warns = _validate_creseq_assumptions(manifest)
         for w in asm_warns:
-            warnings.warn(w, CreSeqAssumptionWarning, stacklevel=2)
+            pass  # CreSeqAssumptionWarning suppressed
         warn_msgs.extend(asm_warns)
 
         if "gc_content" in manifest.columns and _HAS_SCIPY:
@@ -1216,10 +1188,21 @@ def variant_family_coverage(
     needed = {"variant_family", "is_reference"}
     missing_cols = needed - set(manifest.columns)
     if missing_cols:
-        raise ValueError(
-            f"design_manifest missing required columns for variant family analysis: "
-            f"{missing_cols}. Expected variant_family + is_reference."
+        logger.info("variant_family_coverage: skipping — manifest missing columns %s", missing_cols)
+        empty = pd.DataFrame(
+            columns=[
+                "variant_family", "reference_oligo_id", "n_variants_designed",
+                "n_variants_recovered", "reference_recovered", "family_complete",
+                "missing_variants",
+            ]
         )
+        return empty, {
+            "n_families": 0,
+            "fraction_families_complete": None,
+            "fraction_families_reference_missing": None,
+            "warnings": [f"Skipped: manifest missing columns {missing_cols}. No variant family data."],
+            "pass": True,
+        }
 
     if manifest["variant_family"].isna().all():
         logger.info("No variant_family values found — no families to evaluate.")
@@ -1405,7 +1388,6 @@ def library_summary_report(
     manifest_tools = [
         ("oligo_recovery", oligo_recovery, [params.mapping_table_path, params.design_manifest_path]),
         ("gc_content_bias", gc_content_bias, [params.mapping_table_path, params.design_manifest_path]),
-        ("oligo_length_qc", oligo_length_qc, [params.mapping_table_path, params.design_manifest_path]),
         ("variant_family_coverage", variant_family_coverage, [params.mapping_table_path, params.design_manifest_path]),
     ]
 

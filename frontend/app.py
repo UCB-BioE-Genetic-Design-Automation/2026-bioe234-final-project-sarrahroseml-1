@@ -451,16 +451,17 @@ elif page == "📊 QC & Plots":
                 with st.spinner("Running all QC checks…"):
                     try:
                         from creseq_mcp.qc.library import library_summary_report
-                        qc_df, qc_summary = library_summary_report(
+                        qc_results = library_summary_report(
                             str(_mt), str(_pc),
                             str(_dm) if _dm.exists() else None,
                         )
-                        st.session_state.qc_report = (qc_df, qc_summary)
+                        _, report_summary = qc_results["_report"]
+                        st.session_state.qc_report = (qc_results, report_summary)
                     except Exception as e:
                         st.error(f"QC failed: {e}")
 
             if st.session_state.qc_report is not None:
-                qc_df, qc_summary = st.session_state.qc_report
+                qc_results, qc_summary = st.session_state.qc_report
                 overall = qc_summary.get("overall_pass", False)
                 failed = qc_summary.get("failed_checks", [])
                 warnings = qc_summary.get("warnings", [])
@@ -473,7 +474,7 @@ elif page == "📊 QC & Plots":
                     for w in warnings:
                         st.warning(w)
 
-                tool_results = qc_summary.get("tool_results", {})
+                tool_results = {k: v[1] for k, v in qc_results.items() if k != "_report"}
 
                 # Per-tool summary cards
                 tool_labels = {
@@ -497,66 +498,63 @@ elif page == "📊 QC & Plots":
 
                 st.divider()
 
-                # Charts using per-tool DataFrames from qc_df
-                if "tool" in qc_df.columns:
-                    for tool_key, label in tool_labels.items():
-                        tool_df = qc_df[qc_df["tool"] == tool_key] if "tool" in qc_df.columns else pd.DataFrame()
-                        res = tool_results.get(tool_key, {})
+                # Charts using per-tool DataFrames
+                for tool_key, label in tool_labels.items():
+                    tool_df = qc_results.get(tool_key, (pd.DataFrame(), {}))[0]
+                    res = tool_results.get(tool_key, {})
 
-                        if tool_key == "barcode_complexity" and not tool_df.empty and "n_barcodes" in tool_df.columns:
-                            with st.expander(f"📊 {label}"):
-                                fig = px.histogram(tool_df, x="n_barcodes", nbins=40,
-                                    title="Barcodes per Oligo", labels={"n_barcodes": "Barcodes"},
-                                    color_discrete_sequence=["#4C78A8"])
-                                st.plotly_chart(fig, use_container_width=True)
-                                med = res.get("median_barcodes_per_oligo")
-                                if med:
-                                    st.metric("Median barcodes/oligo", f"{med:.1f}")
+                    if tool_key == "barcode_complexity" and not tool_df.empty and "n_barcodes" in tool_df.columns:
+                        with st.expander(f"📊 {label}"):
+                            fig = px.histogram(tool_df, x="n_barcodes", nbins=40,
+                                title="Barcodes per Oligo", labels={"n_barcodes": "Barcodes"},
+                                color_discrete_sequence=["#4C78A8"])
+                            st.plotly_chart(fig, use_container_width=True)
+                            med = res.get("median_barcodes_per_oligo")
+                            if med:
+                                st.metric("Median barcodes/oligo", f"{med:.1f}")
 
-                        elif tool_key == "oligo_recovery" and not tool_df.empty:
-                            with st.expander(f"📊 {label}"):
-                                if "category" in tool_df.columns and "recovery_at_10" in tool_df.columns:
-                                    fig = px.bar(tool_df, x="category", y="recovery_at_10",
-                                        title="Recovery at ≥10 Barcodes by Category",
-                                        labels={"recovery_at_10": "Recovery fraction", "category": "Category"},
-                                        color_discrete_sequence=["#54A24B"])
-                                    fig.add_hline(y=0.8, line_dash="dash", line_color="red", annotation_text="80% target")
-                                    st.plotly_chart(fig, use_container_width=True)
-
-                        elif tool_key == "synthesis_error_profile" and not tool_df.empty:
-                            with st.expander(f"📊 {label}"):
-                                rate_cols = [c for c in ["mismatch_rate", "indel_rate", "soft_clip_rate"] if c in tool_df.columns]
-                                if rate_cols:
-                                    means = tool_df[rate_cols].mean().reset_index()
-                                    means.columns = ["Error type", "Rate"]
-                                    fig = px.bar(means, x="Error type", y="Rate",
-                                        title="Mean Synthesis Error Rates",
-                                        color_discrete_sequence=["#E45756"])
-                                    st.plotly_chart(fig, use_container_width=True)
-
-                        elif tool_key == "plasmid_depth_summary" and res:
-                            with st.expander(f"📊 {label}"):
-                                st.metric("Median DNA count", f"{res.get('median_dna_count', 'N/A')}")
-                                st.metric("Zero-count barcodes", f"{res.get('frac_zero_barcodes', 0):.1%}")
-
-                        elif tool_key == "gc_content_bias" and not tool_df.empty and "gc_bin" in tool_df.columns:
-                            with st.expander(f"📊 {label}"):
-                                fig = px.line(tool_df, x="gc_bin", y="recovery_rate",
-                                    title="Recovery Rate by GC Content Bin",
-                                    labels={"gc_bin": "GC content", "recovery_rate": "Recovery rate"},
-                                    markers=True)
+                    elif tool_key == "oligo_recovery" and not tool_df.empty:
+                        with st.expander(f"📊 {label}"):
+                            if "category" in tool_df.columns and "recovery_at_10" in tool_df.columns:
+                                fig = px.bar(tool_df, x="category", y="recovery_at_10",
+                                    title="Recovery at ≥10 Barcodes by Category",
+                                    labels={"recovery_at_10": "Recovery fraction", "category": "Category"},
+                                    color_discrete_sequence=["#54A24B"])
+                                fig.add_hline(y=0.8, line_dash="dash", line_color="red", annotation_text="80% target")
                                 st.plotly_chart(fig, use_container_width=True)
 
-                        elif tool_key == "variant_family_coverage" and res:
-                            with st.expander(f"📊 {label}"):
-                                frac = res.get("frac_complete_families", None)
-                                miss_ref = res.get("n_families_missing_reference", None)
-                                if frac is not None:
-                                    st.metric("Complete families", f"{frac:.1%}")
-                                if miss_ref is not None:
-                                    st.metric("Families missing reference", str(miss_ref))
-                else:
-                    st.info("Run Library QC to see per-tool charts.", icon="ℹ️")
+                    elif tool_key == "synthesis_error_profile" and not tool_df.empty:
+                        with st.expander(f"📊 {label}"):
+                            rate_cols = [c for c in ["mismatch_rate", "indel_rate", "soft_clip_rate"] if c in tool_df.columns]
+                            if rate_cols:
+                                means = tool_df[rate_cols].mean().reset_index()
+                                means.columns = ["Error type", "Rate"]
+                                fig = px.bar(means, x="Error type", y="Rate",
+                                    title="Mean Synthesis Error Rates",
+                                    color_discrete_sequence=["#E45756"])
+                                st.plotly_chart(fig, use_container_width=True)
+
+                    elif tool_key == "plasmid_depth_summary" and res:
+                        with st.expander(f"📊 {label}"):
+                            st.metric("Median DNA count", f"{res.get('median_dna_count', 'N/A')}")
+                            st.metric("Zero-count barcodes", f"{res.get('frac_zero_barcodes', 0):.1%}")
+
+                    elif tool_key == "gc_content_bias" and not tool_df.empty and "gc_bin" in tool_df.columns:
+                        with st.expander(f"📊 {label}"):
+                            fig = px.line(tool_df, x="gc_bin", y="recovery_rate",
+                                title="Recovery Rate by GC Content Bin",
+                                labels={"gc_bin": "GC content", "recovery_rate": "Recovery rate"},
+                                markers=True)
+                            st.plotly_chart(fig, use_container_width=True)
+
+                    elif tool_key == "variant_family_coverage" and res:
+                        with st.expander(f"📊 {label}"):
+                            frac = res.get("frac_complete_families", None)
+                            miss_ref = res.get("n_families_missing_reference", None)
+                            if frac is not None:
+                                st.metric("Complete families", f"{frac:.1%}")
+                            if miss_ref is not None:
+                                st.metric("Families missing reference", str(miss_ref))
 
     # ── Activity Plots ──────────────────────────────────────────────────────
     with tab_activity:
