@@ -102,19 +102,15 @@ if page == "📤 Upload":
     skip_assoc = st.toggle("Skip association — use existing mapping table")
     if skip_assoc:
         _sk_col1, _sk_col2 = st.columns(2)
-        _default_mapping = str(UPLOAD_DIR / "mapping_table.tsv") if (UPLOAD_DIR / "mapping_table.tsv").exists() else ""
-        _default_manifest = str(UPLOAD_DIR / "design_manifest.tsv") if (UPLOAD_DIR / "design_manifest.tsv").exists() else ""
         with _sk_col1:
             existing_mapping_str = st.text_input(
                 "Mapping table path *",
-                value=_default_mapping,
                 placeholder="~/Desktop/creseq_outputs/mapping_table.tsv",
                 help="mapping_table.tsv produced by a previous association run.",
             )
         with _sk_col2:
             existing_manifest_str = st.text_input(
                 "Design manifest path (optional)",
-                value=_default_manifest,
                 placeholder="~/Desktop/creseq_outputs/design_manifest.tsv",
                 help="design_manifest.tsv from the same run. Used for oligo category labels in activity analysis.",
             )
