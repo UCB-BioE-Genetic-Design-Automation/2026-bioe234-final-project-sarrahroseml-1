@@ -1,5 +1,5 @@
 # CRE-seq / lentiMPRA Analysis Pipeline
-**BioE 134 Final Project — Bowman Novey**
+**BioE 134 Final Project**
 
 End-to-end lentiMPRA analysis toolkit with a Streamlit frontend, Claude API QC agent, and a FastMCP server. Built around the Agarwal et al. 2025 lentiMPRA dataset (ENCODE ENCSR463IRX, HepG2 pilot).
 
