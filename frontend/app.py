@@ -101,14 +101,25 @@ if page == "📤 Upload":
     # ── Skip association ─────────────────────────────────────────────────────
     skip_assoc = st.toggle("Skip association — use existing mapping table")
     if skip_assoc:
-        existing_mapping_str = st.text_input(
-            "Mapping table path *",
-            placeholder="~/Desktop/creseq_outputs/mapping_table.tsv",
-            help="mapping_table.tsv produced by a previous association run.",
-        )
+        _sk_col1, _sk_col2 = st.columns(2)
+        with _sk_col1:
+            existing_mapping_str = st.text_input(
+                "Mapping table path *",
+                placeholder="~/Desktop/creseq_outputs/mapping_table.tsv",
+                help="mapping_table.tsv produced by a previous association run.",
+            )
+        with _sk_col2:
+            existing_manifest_str = st.text_input(
+                "Design manifest path (optional)",
+                placeholder="~/Desktop/creseq_outputs/design_manifest.tsv",
+                help="design_manifest.tsv from the same run. Used for oligo category labels in activity analysis.",
+            )
         existing_mapping_path = _resolve(existing_mapping_str)
+        existing_manifest_path = _resolve(existing_manifest_str)
         if existing_mapping_str.strip() and not existing_mapping_path:
             st.error(f"Mapping table not found — {existing_mapping_str.strip()}")
+        if existing_manifest_str.strip() and not existing_manifest_path:
+            st.warning(f"Design manifest not found — {existing_manifest_str.strip()}")
     st.divider()
 
     # ── Association inputs (hidden when skipping) ────────────────────────────
@@ -143,6 +154,7 @@ if page == "📤 Upload":
             )
     else:
         assoc_r1_str = assoc_bc_str = design_fasta_str = labels_path_str = ""
+        existing_mapping_path = existing_manifest_path = None
 
     # ── Counting inputs ──────────────────────────────────────────────────────
     st.subheader("Counting")
@@ -268,6 +280,10 @@ if page == "📤 Upload":
                 _dest = UPLOAD_DIR / "mapping_table.tsv"
                 if existing_mapping_path.resolve() != _dest.resolve():
                     _shutil.copy(existing_mapping_path, _dest)
+                if existing_manifest_path:
+                    _mdest = UPLOAD_DIR / "design_manifest.tsv"
+                    if existing_manifest_path.resolve() != _mdest.resolve():
+                        _shutil.copy(existing_manifest_path, _mdest)
                 assoc_stats = None
                 progress.progress(25, text="Steps 2+3 — DNA and RNA counting (parallel)…")
             else:
