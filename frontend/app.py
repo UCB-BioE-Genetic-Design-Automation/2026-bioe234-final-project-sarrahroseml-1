@@ -13,7 +13,9 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from pathlib import Path
-UPLOAD_DIR = Path.home() / "Desktop" / "creseq_outputs"
+ASSOC_DIR = Path.home() / "Desktop" / "creseq_outputs"   # public — association outputs
+UPLOAD_DIR = Path.home() / ".creseq" / "uploads"         # hidden — computed outputs
+ASSOC_DIR.mkdir(parents=True, exist_ok=True)
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 try:
@@ -273,31 +275,39 @@ if page == "📤 Upload":
 
         progress = st.progress(0, text="Step 1/4 — Association (mappy + STARCODE)…")
         try:
+            import shutil as _shutil
+
+            def _copy_assoc_files(mapping, plasmid, manifest):
+                """Copy association files from their source into UPLOAD_DIR."""
+                for src, name in [
+                    (mapping, "mapping_table.tsv"),
+                    (plasmid, "plasmid_counts.tsv"),
+                ]:
+                    if src and Path(src).resolve() != (UPLOAD_DIR / name).resolve():
+                        _shutil.copy(src, UPLOAD_DIR / name)
+                if manifest and Path(manifest).resolve() != (UPLOAD_DIR / "design_manifest.tsv").resolve():
+                    _shutil.copy(manifest, UPLOAD_DIR / "design_manifest.tsv")
+
             if skip_assoc:
-                import shutil as _shutil
-                _dest = UPLOAD_DIR / "mapping_table.tsv"
-                if existing_mapping_path.resolve() != _dest.resolve():
-                    _shutil.copy(existing_mapping_path, _dest)
-                _pdest = UPLOAD_DIR / "plasmid_counts.tsv"
-                if existing_plasmid_path.resolve() != _pdest.resolve():
-                    _shutil.copy(existing_plasmid_path, _pdest)
-                if existing_manifest_path:
-                    _mdest = UPLOAD_DIR / "design_manifest.tsv"
-                    if existing_manifest_path.resolve() != _mdest.resolve():
-                        _shutil.copy(existing_manifest_path, _mdest)
+                _copy_assoc_files(existing_mapping_path, existing_plasmid_path, existing_manifest_path)
                 assoc_stats = None
                 progress.progress(25, text="Steps 2+3 — DNA and RNA counting (parallel)…")
             else:
                 assoc_stats = run_association(
                     fastq_r1=assoc_r1_path,
                     design_fasta=design_fasta,
-                    outdir=UPLOAD_DIR,
+                    outdir=ASSOC_DIR,
                     fastq_r2=assoc_r2_path,
                     fastq_bc=assoc_bc_path,
                     labels_path=labels_path,
                     min_cov=int(min_cov),
                     min_frac=float(min_frac),
                     mapq_threshold=int(mapq_thr),
+                )
+                _copy_assoc_files(
+                    ASSOC_DIR / "mapping_table.tsv",
+                    ASSOC_DIR / "plasmid_counts.tsv",
+                    ASSOC_DIR / "design_manifest.tsv" if (ASSOC_DIR / "design_manifest.tsv").exists() else None,
                 )
                 progress.progress(25, text="Steps 2+3 — DNA and RNA counting (parallel)…")
 
@@ -351,14 +361,15 @@ if page == "📤 Upload":
     st.divider()
     st.subheader("Generated files")
     cols = st.columns(5)
-    for col, (label, fname) in zip(cols, [
-        ("Mapping table", "mapping_table.tsv"),
-        ("Plasmid counts", "plasmid_counts.tsv"),
-        ("Design manifest", "design_manifest.tsv"),
-        ("RNA counts", "rna_counts.tsv"),
-        ("Activity results", "activity_results.tsv"),
-    ]):
-        p = UPLOAD_DIR / fname
+    assoc_files = [
+        ("Mapping table", "mapping_table.tsv", ASSOC_DIR),
+        ("Plasmid counts", "plasmid_counts.tsv", ASSOC_DIR),
+        ("Design manifest", "design_manifest.tsv", ASSOC_DIR),
+        ("RNA counts", "rna_counts.tsv", UPLOAD_DIR),
+        ("Activity results", "activity_results.tsv", UPLOAD_DIR),
+    ]
+    for col, (label, fname, fdir) in zip(cols, assoc_files):
+        p = fdir / fname
         if p.exists():
             col.success(f"**{label}**")
         else:

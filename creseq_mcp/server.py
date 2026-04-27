@@ -45,7 +45,7 @@ from creseq_mcp.stats.library import (
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-UPLOAD_DIR = Path.home() / "Desktop" / "creseq_outputs"
+UPLOAD_DIR = Path.home() / ".creseq" / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 mcp = FastMCP(
