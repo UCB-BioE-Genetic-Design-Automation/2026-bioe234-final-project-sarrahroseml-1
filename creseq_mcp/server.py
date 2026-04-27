@@ -273,29 +273,54 @@ def tool_library_summary_report(
 
 
 @mcp.tool()
-def tool_process_library(
-    fastq_path: str,
-    reference_path: str,
-    barcode_len: int = 10,
-    barcode_end: str = "3prime",
-    max_mismatch: int = 1,
+def tool_run_association(
+    fastq_r1: str,
+    design_fasta: str,
+    fastq_r2: str | None = None,
+    fastq_bc: str | None = None,
+    labels_path: str | None = None,
+    min_cov: int = 3,
+    min_frac: float = 0.5,
+    mapq_threshold: int = 20,
 ) -> dict:
     """
-    Process a raw CRE-seq plasmid-DNA FASTQ against a barcode reference library.
+    Run the full association step: mappy alignment + STARCODE clustering.
 
-    Writes mapping_table.tsv, plasmid_counts.tsv, and design_manifest.tsv to the
-    upload directory so all QC tools can run without additional arguments.
+    Maps R1 reads to the design FASTA, links barcodes, clusters with STARCODE,
+    and writes mapping_table.tsv, plasmid_counts.tsv, design_manifest.tsv to
+    CRESEQ_ASSOC_DIR (default ~/creseq_outputs).
 
-    barcode_end: "3prime" (default) or "5prime".
+    fastq_r1: R1 oligo reads FASTQ (required).
+    design_fasta: FASTA of designed oligo sequences (required).
+    fastq_r2: optional R2 paired-end reads.
+    fastq_bc: optional barcode index FASTQ (ENCODE i5 format).
+    labels_path: optional TSV with oligo_id + designed_category columns.
     """
-    from creseq_mcp.association.pipeline import process_and_save
+    from creseq_mcp.association.association import run_association
+    import shutil
 
-    return process_and_save(
-        fastq_path, reference_path, UPLOAD_DIR,
-        barcode_len=barcode_len,
-        barcode_end=barcode_end,
-        max_mismatch=max_mismatch,
+    assoc_dir = Path(os.environ.get("CRESEQ_ASSOC_DIR", Path.home() / "creseq_outputs"))
+    assoc_dir.mkdir(parents=True, exist_ok=True)
+
+    result = run_association(
+        fastq_r1=fastq_r1,
+        design_fasta=design_fasta,
+        outdir=assoc_dir,
+        fastq_r2=fastq_r2,
+        fastq_bc=fastq_bc,
+        labels_path=labels_path,
+        min_cov=min_cov,
+        min_frac=min_frac,
+        mapq_threshold=mapq_threshold,
     )
+
+    # Copy outputs into UPLOAD_DIR so downstream tools can find them
+    for fname in ("mapping_table.tsv", "plasmid_counts.tsv", "design_manifest.tsv"):
+        src = assoc_dir / fname
+        if src.exists():
+            shutil.copy(src, UPLOAD_DIR / fname)
+
+    return result
 
 # ---------------------------------------------------------------------------
 # Stats tool registrations
@@ -303,17 +328,17 @@ def tool_process_library(
 
 @mcp.tool()
 def tool_rank_cre_candidates(
-    activity_table_path: str,
+    activity_table_path: str | None = None,
     top_n: int = 20,
-    activity_col: str = "log2_activity",
-    q_col: str = "q_value",
+    activity_col: str = "log2_ratio",
+    q_col: str = "fdr",
 ) -> dict:
     """
     Rank CRE candidates by activity strength and statistical confidence.
     """
     return _serialise(
         rank_cre_candidates(
-            activity_table_path=activity_table_path,
+            activity_table_path=_path(activity_table_path, "activity_results.tsv"),
             top_n=top_n,
             activity_col=activity_col,
             q_col=q_col,
@@ -622,6 +647,52 @@ def tool_plot_creseq(
         neg_control_ids=neg_control_ids,
         annotation_file=annotation_file,
     )
+
+
+@mcp.tool()
+def tool_annotate_motifs(
+    activity_results_path: str | None = None,
+    design_manifest_path: str | None = None,
+    tf_names: list[str] | None = None,
+) -> dict:
+    """
+    Annotate each CRE with its best-matching TF motif (lightweight JASPAR REST scan).
+
+    Updates activity_results.tsv in-place with a top_motif column.
+    Enables the Motif Analysis tab in the frontend and motif_enrichment_summary.
+
+    tf_names: optional list of TF names to scan (defaults to liver/HepG2 panel).
+    """
+    from creseq_mcp.motifs.annotate import annotate_top_motifs
+
+    return annotate_top_motifs(
+        activity_results_path=_path(activity_results_path, "activity_results.tsv"),
+        design_manifest_path=_path(design_manifest_path, "design_manifest.tsv"),
+        tf_names=tf_names,
+        upload_dir=UPLOAD_DIR,
+    )
+
+
+@mcp.tool()
+def tool_variant_delta_scores(
+    activity_results_path: str | None = None,
+    design_manifest_path: str | None = None,
+) -> dict:
+    """
+    Compute variant effect scores: delta = mutant_log2_ratio - reference_log2_ratio.
+
+    Requires oligo IDs with R:/A:/C: prefix convention (lentiMPRA standard),
+    or a design manifest with variant_family and is_reference columns.
+    Saves variant_delta_scores.tsv to the upload directory.
+    """
+    from creseq_mcp.variants.delta_scores import compute_variant_delta_scores
+
+    _, summary = compute_variant_delta_scores(
+        activity_results_path=_path(activity_results_path, "activity_results.tsv"),
+        design_manifest_path=_path(design_manifest_path, "design_manifest.tsv"),
+        upload_dir=UPLOAD_DIR,
+    )
+    return summary
 
 
 if __name__ == "__main__":

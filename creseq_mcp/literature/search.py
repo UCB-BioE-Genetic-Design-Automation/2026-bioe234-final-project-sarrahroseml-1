@@ -66,8 +66,8 @@ def _check_cols(df: pd.DataFrame, required: set[str], source: str) -> None:
 def rank_cre_candidates(
     activity_table_path: str | Path,
     top_n: int = 20,
-    activity_col: str = "log2_activity",
-    q_col: str = "q_value",
+    activity_col: str = "log2_ratio",
+    q_col: str = "fdr",
 ) -> tuple[pd.DataFrame, dict[str, Any]]:
     """
     Rank CREs by activity strength and statistical confidence.
