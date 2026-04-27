@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from creseq_mcp.processing.pipeline import _hamming, _parse_fastq
+from creseq_mcp.association.pipeline import _hamming, _parse_fastq
 
 logger = logging.getLogger(__name__)
 

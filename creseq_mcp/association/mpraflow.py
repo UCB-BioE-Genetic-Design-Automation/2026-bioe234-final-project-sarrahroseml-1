@@ -43,7 +43,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from creseq_mcp.processing.pipeline import _make_cigar_md
+from creseq_mcp.association.pipeline import _make_cigar_md
 
 logger = logging.getLogger(__name__)
 
@@ -55,10 +55,6 @@ def _nextflow_bin() -> str | None:
         return found
     local = Path.home() / "bin" / "nextflow"
     return str(local) if local.exists() else None
-
-
-def is_available() -> bool:
-    return _nextflow_bin() is not None
 
 
 def run_mpraflow(

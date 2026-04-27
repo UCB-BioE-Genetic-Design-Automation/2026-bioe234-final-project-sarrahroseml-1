@@ -376,7 +376,7 @@ print(f"  {len(rna_rows)} rows, 2 replicates written")
 print("Running activity analysis…")
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from creseq_mcp.qc.activity import activity_report
+from creseq_mcp.activity.normalize import activity_report
 
 _, summary = activity_report(
     UPLOAD_DIR / "plasmid_counts.tsv",

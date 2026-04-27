@@ -1,1 +1,0 @@
-# creseq_mcp.stats — activity statistics and result interpretation tools

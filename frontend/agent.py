@@ -13,10 +13,10 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import anthropic
 
 from creseq_mcp.server import UPLOAD_DIR, _summary
-from creseq_mcp.qc.activity import compute_variant_delta_scores
-from creseq_mcp.qc.motifs import annotate_top_motifs
-from creseq_mcp.motif import extract_sequences_to_fasta, motif_enrichment
-from creseq_mcp.plotting import plot_creseq
+from creseq_mcp.variants.delta_scores import compute_variant_delta_scores
+from creseq_mcp.motifs.annotate import annotate_top_motifs
+from creseq_mcp.motifs.enrichment import extract_sequences_to_fasta, motif_enrichment
+from creseq_mcp.plots.plots import plot_creseq
 from creseq_mcp.qc.library import (
     barcode_collision_analysis,
     barcode_complexity,
@@ -29,7 +29,7 @@ from creseq_mcp.qc.library import (
     synthesis_error_profile,
     variant_family_coverage,
 )
-from creseq_mcp.stats.library import (
+from creseq_mcp.literature.search import (
     rank_cre_candidates,
     motif_enrichment_summary,
     prepare_rag_context,
@@ -55,7 +55,7 @@ def _p(args: dict, key: str, filename: str) -> str:
 
 
 def _activity_report(args: dict) -> tuple:
-    from creseq_mcp.qc.activity import activity_report
+    from creseq_mcp.activity.normalize import activity_report
     _, summary = activity_report(
         _p(args, "dna_counts_path", "plasmid_counts.tsv"),
         _p(args, "rna_counts_path", "rna_counts.tsv"),

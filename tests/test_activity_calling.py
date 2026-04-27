@@ -19,7 +19,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from creseq_mcp.activity_calling import (
+from creseq_mcp.activity.classify import (
     call_active_elements,
     call_active_elements_empirical,
 )

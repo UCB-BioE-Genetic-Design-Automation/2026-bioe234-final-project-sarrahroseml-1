@@ -16,7 +16,7 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from creseq_mcp.plotting import (
+from creseq_mcp.plots.plots import (
     _plot_annotation_boxplot,
     _plot_motif_dotplot,
     _plot_ranked_activity,

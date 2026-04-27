@@ -1,11 +1,10 @@
 """
 tests/qc/test_activity.py
 =========================
-Tests for creseq_mcp/qc/activity.py.
+Tests for creseq_mcp/activity/normalize.py.
 
 Coverage:
   - normalize_and_compute_ratios: happy path, min_barcodes filter, manifest merge
-  - call_activity: z-test path with neg controls, fallback threshold path
   - activity_report: end-to-end save
 """
 
@@ -15,9 +14,9 @@ import pandas as pd
 import numpy as np
 import pytest
 
-from creseq_mcp.qc.activity import (
+from creseq_mcp.activity.normalize import (
     normalize_and_compute_ratios,
-    call_activity,
+    _call_activity,
     activity_report,
 )
 
@@ -99,7 +98,7 @@ class TestNormalizeAndComputeRatios:
 
 
 # ---------------------------------------------------------------------------
-# call_activity
+# _call_activity
 # ---------------------------------------------------------------------------
 
 class TestCallActivity:
@@ -112,11 +111,11 @@ class TestCallActivity:
             rows.append({"oligo_id": f"O{i}", "log2_ratio": float(base + rng.normal(0, 0.2)), "designed_category": cat})
         return pd.DataFrame(rows)
 
-    def test_z_test_path(self):
+    def test_empirical_path(self):
         df = self._make_oligo_df()
-        result, summary = call_activity(df)
+        result, summary = _call_activity(df)
 
-        assert summary["method"] == "z_test_vs_neg_ctrl"
+        assert summary["method"] == "empirical_median_mad"
         assert summary["n_active"] > 0
         assert "fdr" in result.columns
         assert "active" in result.columns
@@ -125,7 +124,7 @@ class TestCallActivity:
         # No designed_category column → fallback to log2>1 threshold
         df = self._make_oligo_df()
         df = df.drop(columns=["designed_category"])
-        result, summary = call_activity(df)
+        result, summary = _call_activity(df)
 
         assert summary["method"] == "threshold_log2gt1"
         assert result["active"].dtype == bool
@@ -134,7 +133,7 @@ class TestCallActivity:
         # Only 2 neg controls → fewer than 3 required → fallback
         rows = [{"oligo_id": f"O{i}", "log2_ratio": float(i * 0.1), "designed_category": "negative_control" if i < 2 else "test_element"} for i in range(20)]
         df = pd.DataFrame(rows)
-        result, summary = call_activity(df)
+        result, summary = _call_activity(df)
         assert summary["method"] == "threshold_log2gt1"
 
 

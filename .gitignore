@@ -8,3 +8,8 @@ build/
 *.egg
 *.md
 BOWMAN_PROJECT_NOTES.md
+.chainlit/
+.nextflow.log
+*.log
+demo_outputs/
+.DS_Store

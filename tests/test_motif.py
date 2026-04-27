@@ -21,7 +21,7 @@ import os
 import pandas as pd
 import pytest
 
-from creseq_mcp.motif import (
+from creseq_mcp.motifs.enrichment import (
     _parse_fasta,
     compute_enrichment,
     extract_sequences_to_fasta,

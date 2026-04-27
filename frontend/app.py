@@ -155,7 +155,6 @@ if page == "📤 Upload":
             )
     else:
         assoc_r1_str = assoc_bc_str = design_fasta_str = labels_path_str = ""
-        existing_plasmid_path = None
 
     # ── Counting inputs ──────────────────────────────────────────────────────
     st.subheader("Counting")
@@ -271,9 +270,9 @@ if page == "📤 Upload":
                 st.info(f"Still needed: {', '.join(missing)}")
 
     if st.button("▶ Process all files", type="primary", use_container_width=True, disabled=not ready):
-        from creseq_mcp.processing.association import run_association
-        from creseq_mcp.processing.counting import process_dna_counting, process_rna_counting
-        from creseq_mcp.qc.activity import activity_report
+        from creseq_mcp.association.association import run_association
+        from creseq_mcp.activity.counting import process_dna_counting, process_rna_counting
+        from creseq_mcp.activity.normalize import activity_report
 
         progress = st.progress(0, text="Step 1/4 — Association (mappy + STARCODE)…")
         try:
@@ -648,7 +647,7 @@ elif page == "📊 QC & Plots":
 
         if "top_motif" in _motif_act_df.columns and "active" in _motif_act_df.columns:
             try:
-                from creseq_mcp.stats.library import motif_enrichment_summary
+                from creseq_mcp.literature.search import motif_enrichment_summary
                 motif_enr_df, motif_enr_summary = motif_enrichment_summary(str(_act_motif_path))
                 st.info("Showing real motif enrichment from activity_results.tsv", icon="✅")
 

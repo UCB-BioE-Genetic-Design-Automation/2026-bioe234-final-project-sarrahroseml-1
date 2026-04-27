@@ -1,10 +1,9 @@
 """
 tests/stats/test_library.py
 ============================
-Tests for creseq_mcp/stats/library.py.
+Tests for creseq_mcp/literature/search.py.
 
 Coverage:
-  - call_active_elements: happy path, fallback background, low-control warning
   - rank_cre_candidates: rank ordering, top_element, q_col fallback
   - motif_enrichment_summary: missing column raises ValueError
   - search_pubmed: mocked HTTP response returns DataFrame with title column
@@ -21,8 +20,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from creseq_mcp.stats.library import (
-    call_active_elements,
+from creseq_mcp.literature.search import (
     motif_enrichment_summary,
     rank_cre_candidates,
     search_jaspar_motif,
@@ -52,42 +50,6 @@ def _activity_tsv(tmp_path: Path, n=60, seed=7) -> str:
     p = tmp_path / "activity_results.tsv"
     pd.DataFrame(rows).to_csv(p, sep="\t", index=False)
     return str(p)
-
-
-# ---------------------------------------------------------------------------
-# call_active_elements
-# ---------------------------------------------------------------------------
-
-class TestCallActiveElements:
-    def test_happy_path(self, tmp_path):
-        p = _activity_tsv(tmp_path)
-        df, summary = call_active_elements(p, activity_col="log2_ratio")
-
-        assert "active" in df.columns
-        assert "q_value" in df.columns
-        assert summary["n_active"] > 0
-        assert 0.0 <= summary["fraction_active"] <= 1.0
-
-    def test_fallback_no_neg_ctrl(self, tmp_path):
-        rows = [{"oligo_id": f"O{i}", "log2_ratio": float(i * 0.2)} for i in range(20)]
-        p = tmp_path / "act.tsv"
-        pd.DataFrame(rows).to_csv(p, sep="\t", index=False)
-
-        df, summary = call_active_elements(str(p), activity_col="log2_ratio")
-        # fallback uses bottom 20% as background, should still produce active calls
-        assert "active" in df.columns
-
-    def test_low_control_warning(self, tmp_path):
-        rows = [
-            {"oligo_id": "N1", "log2_ratio": -0.3, "designed_category": "negative_control"},
-            {"oligo_id": "N2", "log2_ratio": -0.2, "designed_category": "negative_control"},
-            {"oligo_id": "T1", "log2_ratio": 2.5, "designed_category": "test_element"},
-        ]
-        p = tmp_path / "few.tsv"
-        pd.DataFrame(rows).to_csv(p, sep="\t", index=False)
-
-        _, summary = call_active_elements(str(p), activity_col="log2_ratio")
-        assert any("fewer than 5" in w.lower() for w in summary["warnings"])
 
 
 # ---------------------------------------------------------------------------
@@ -184,8 +146,8 @@ class TestSearchPubmed:
         }
         fake_get = self._mock_response(ids, summaries)
 
-        with patch("creseq_mcp.stats.library.requests.get", side_effect=fake_get), \
-             patch("creseq_mcp.stats.library.time.sleep"):
+        with patch("creseq_mcp.literature.search.requests.get", side_effect=fake_get), \
+             patch("creseq_mcp.literature.search.time.sleep"):
             df, summary = search_pubmed("GATA1 enhancer MPRA", max_results=1)
 
         assert len(df) == 1
@@ -195,8 +157,8 @@ class TestSearchPubmed:
     def test_no_results(self):
         fake_get = self._mock_response([], {})
 
-        with patch("creseq_mcp.stats.library.requests.get", side_effect=fake_get), \
-             patch("creseq_mcp.stats.library.time.sleep"):
+        with patch("creseq_mcp.literature.search.requests.get", side_effect=fake_get), \
+             patch("creseq_mcp.literature.search.time.sleep"):
             df, summary = search_pubmed("xyzzy gibberish query", max_results=5)
 
         assert len(df) == 0
@@ -227,7 +189,7 @@ class TestSearchJasparMotif:
         mock_resp.raise_for_status = MagicMock()
         mock_resp.json.return_value = mock_data
 
-        with patch("creseq_mcp.stats.library.requests.get", return_value=mock_resp):
+        with patch("creseq_mcp.literature.search.requests.get", return_value=mock_resp):
             df, summary = search_jaspar_motif("CTCF")
 
         assert len(df) == 1
@@ -239,7 +201,7 @@ class TestSearchJasparMotif:
         mock_resp.raise_for_status = MagicMock()
         mock_resp.json.return_value = {"results": []}
 
-        with patch("creseq_mcp.stats.library.requests.get", return_value=mock_resp):
+        with patch("creseq_mcp.literature.search.requests.get", return_value=mock_resp):
             df, summary = search_jaspar_motif("NOTAREALFACTOR999")
 
         assert len(df) == 0

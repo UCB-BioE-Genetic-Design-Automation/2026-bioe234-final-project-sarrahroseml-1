@@ -72,6 +72,12 @@ def extract_sequences_to_fasta(
     classified = pd.read_csv(classified_table, sep="\t")
     sources = pd.read_csv(sequence_source, sep="\t")
 
+    # Normalize oligo_id → element_id in both tables
+    if "element_id" not in classified.columns and "oligo_id" in classified.columns:
+        classified = classified.rename(columns={"oligo_id": "element_id"})
+    if "element_id" not in sources.columns and "oligo_id" in sources.columns:
+        sources = sources.rename(columns={"oligo_id": "element_id"})
+
     for col in ("element_id", "active", "pvalue"):
         if col not in classified.columns:
             raise ValueError(

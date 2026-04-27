@@ -1,6 +1,6 @@
 """
-creseq_mcp/plotting.py
-======================
+creseq_mcp/plots/plots.py
+=========================
 Publication-quality figures for CRE-seq analysis output.
 
 One MCP-facing dispatcher (``plot_creseq``) that routes to five private plot
@@ -23,8 +23,6 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Iterable
-
 import matplotlib
 
 matplotlib.use("Agg")  # headless — must come before pyplot import

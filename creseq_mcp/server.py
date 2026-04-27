@@ -32,7 +32,7 @@ from creseq_mcp.qc.library import (
     variant_family_coverage,
 )
 
-from creseq_mcp.stats.library import (
+from creseq_mcp.literature.search import (
     interpret_literature_evidence,
     literature_search_for_motifs,
     motif_enrichment_summary,
@@ -288,7 +288,7 @@ def tool_process_library(
 
     barcode_end: "3prime" (default) or "5prime".
     """
-    from creseq_mcp.processing.pipeline import process_and_save
+    from creseq_mcp.association.pipeline import process_and_save
 
     return process_and_save(
         fastq_path, reference_path, UPLOAD_DIR,
@@ -476,7 +476,7 @@ def tool_process_dna_counting(
     Requires mapping_table.tsv from the association step.
     barcode_end: "3prime" (default) or "5prime".
     """
-    from creseq_mcp.processing.counting import process_dna_counting
+    from creseq_mcp.activity.counting import process_dna_counting
 
     return process_dna_counting(
         fastq_path,
@@ -503,7 +503,7 @@ def tool_process_rna_counting(
     fastq_paths: list of FASTQ paths, one per replicate.
     rep_names: optional list of replicate labels (default: rep1, rep2, …).
     """
-    from creseq_mcp.processing.counting import process_rna_counting
+    from creseq_mcp.activity.counting import process_rna_counting
 
     return process_rna_counting(
         fastq_paths,
@@ -528,7 +528,7 @@ def tool_activity_report(
     Saves activity_results.tsv to the upload directory.
     Uses z-test vs. negative controls when available; falls back to log2 > 1 threshold.
     """
-    from creseq_mcp.qc.activity import activity_report
+    from creseq_mcp.activity.normalize import activity_report
 
     _, summary = activity_report(
         _path(dna_counts_path, "plasmid_counts.tsv"),
@@ -555,7 +555,7 @@ def tool_extract_sequences(
     as background.  Negative controls (NaN pvalue) are excluded from both.
     Returns paths plus per-set counts.
     """
-    from creseq_mcp.motif import extract_sequences_to_fasta
+    from creseq_mcp.motifs.enrichment import extract_sequences_to_fasta
 
     return extract_sequences_to_fasta(
         classified_table=classified_table,
@@ -583,7 +583,7 @@ def tool_motif_enrichment(
     exact + BH-FDR.  Returns the enrichment table path and a summary of the
     top significant motifs.
     """
-    from creseq_mcp.motif import motif_enrichment
+    from creseq_mcp.motifs.enrichment import motif_enrichment
 
     return motif_enrichment(
         active_fasta=active_fasta,
@@ -612,7 +612,7 @@ def tool_plot_creseq(
     annotation_boxplot, motif_dotplot}.  Returns the path to the saved
     figure plus a natural-language description of what it shows.
     """
-    from creseq_mcp.plotting import plot_creseq
+    from creseq_mcp.plots.plots import plot_creseq
 
     return plot_creseq(
         data_file=data_file,
