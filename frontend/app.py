@@ -109,15 +109,27 @@ if page == "📤 Upload":
                 help="mapping_table.tsv produced by a previous association run.",
             )
         with _sk_col2:
+            existing_plasmid_str = st.text_input(
+                "Plasmid counts path *",
+                placeholder="~/Desktop/creseq_outputs/plasmid_counts.tsv",
+                help="plasmid_counts.tsv produced by a previous association run.",
+            )
+        _sk_col3, _sk_col4 = st.columns(2)
+        with _sk_col3:
             existing_manifest_str = st.text_input(
                 "Design manifest path (optional)",
                 placeholder="~/Desktop/creseq_outputs/design_manifest.tsv",
                 help="design_manifest.tsv from the same run. Used for oligo category labels in activity analysis.",
             )
+        with _sk_col4:
+            pass  # reserved for future inputs
         existing_mapping_path = _resolve(existing_mapping_str)
+        existing_plasmid_path = _resolve(existing_plasmid_str)
         existing_manifest_path = _resolve(existing_manifest_str)
         if existing_mapping_str.strip() and not existing_mapping_path:
             st.error(f"Mapping table not found — {existing_mapping_str.strip()}")
+        if existing_plasmid_str.strip() and not existing_plasmid_path:
+            st.error(f"Plasmid counts not found — {existing_plasmid_str.strip()}")
         if existing_manifest_str.strip() and not existing_manifest_path:
             st.warning(f"Design manifest not found — {existing_manifest_str.strip()}")
     st.divider()
@@ -154,6 +166,7 @@ if page == "📤 Upload":
             )
     else:
         assoc_r1_str = assoc_bc_str = design_fasta_str = labels_path_str = ""
+        existing_plasmid_path = None
 
     # ── Counting inputs ──────────────────────────────────────────────────────
     st.subheader("Counting")
@@ -242,12 +255,13 @@ if page == "📤 Upload":
 
     # ── Process button ───────────────────────────────────────────────────────
     if skip_assoc:
-        ready = bool(existing_mapping_path and dna_path and len(rna_paths) > 0)
+        ready = bool(existing_mapping_path and existing_plasmid_path and dna_path and len(rna_paths) > 0)
         if not ready:
             missing = [n for n, v in [
-                ("Mapping table", existing_mapping_path),
-                ("DNA FASTQ",     dna_path),
-                ("RNA FASTQs",    rna_paths or None),
+                ("Mapping table",  existing_mapping_path),
+                ("Plasmid counts", existing_plasmid_path),
+                ("DNA FASTQ",      dna_path),
+                ("RNA FASTQs",     rna_paths or None),
             ] if not v]
             if missing:
                 st.info(f"Still needed: {', '.join(missing)}")
@@ -279,6 +293,9 @@ if page == "📤 Upload":
                 _dest = UPLOAD_DIR / "mapping_table.tsv"
                 if existing_mapping_path.resolve() != _dest.resolve():
                     _shutil.copy(existing_mapping_path, _dest)
+                _pdest = UPLOAD_DIR / "plasmid_counts.tsv"
+                if existing_plasmid_path.resolve() != _pdest.resolve():
+                    _shutil.copy(existing_plasmid_path, _pdest)
                 if existing_manifest_path:
                     _mdest = UPLOAD_DIR / "design_manifest.tsv"
                     if existing_manifest_path.resolve() != _mdest.resolve():
