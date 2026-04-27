@@ -6,6 +6,7 @@ import io
 import os
 import time
 
+
 import numpy as np
 import pandas as pd
 import plotly.express as px
@@ -13,8 +14,9 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from pathlib import Path
-ASSOC_DIR = Path.home() / "Desktop" / "creseq_outputs"   # public — association outputs
-UPLOAD_DIR = Path.home() / ".creseq" / "uploads"         # hidden — computed outputs
+# Override with env vars: CRESEQ_ASSOC_DIR and CRESEQ_UPLOAD_DIR
+ASSOC_DIR = Path(os.environ.get("CRESEQ_ASSOC_DIR", Path.home() / "creseq_outputs"))
+UPLOAD_DIR = Path(os.environ.get("CRESEQ_UPLOAD_DIR", Path.home() / ".creseq" / "uploads"))
 ASSOC_DIR.mkdir(parents=True, exist_ok=True)
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -92,20 +94,20 @@ if page == "📤 Upload":
         with _sk_col1:
             existing_mapping_str = st.text_input(
                 "Mapping table path *",
-                placeholder="~/Desktop/creseq_outputs/mapping_table.tsv",
+                placeholder="~/creseq_outputs/mapping_table.tsv",
                 help="mapping_table.tsv produced by a previous association run.",
             )
         with _sk_col2:
             existing_plasmid_str = st.text_input(
                 "Plasmid counts path *",
-                placeholder="~/Desktop/creseq_outputs/plasmid_counts.tsv",
+                placeholder="~/creseq_outputs/plasmid_counts.tsv",
                 help="plasmid_counts.tsv produced by a previous association run.",
             )
         _sk_col3, _sk_col4 = st.columns(2)
         with _sk_col3:
             existing_manifest_str = st.text_input(
                 "Design manifest path (optional)",
-                placeholder="~/Desktop/creseq_outputs/design_manifest.tsv",
+                placeholder="~/creseq_outputs/design_manifest.tsv",
                 help="design_manifest.tsv from the same run. Used for oligo category labels in activity analysis.",
             )
         with _sk_col4:
@@ -128,13 +130,13 @@ if page == "📤 Upload":
         with col1:
             assoc_r1_str = st.text_input(
                 "Association R1 FASTQ *",
-                placeholder="~/Desktop/creseq_test_data/assoc_R1.fastq.gz",
+                placeholder="~/creseq_test_data/assoc_R1.fastq.gz",
                 help="R1 oligo reads — used for alignment to the design FASTA.",
             )
         with col2:
             design_fasta_str = st.text_input(
                 "Design FASTA *",
-                placeholder="~/Desktop/creseq_test_data/reference.fa",
+                placeholder="~/creseq_test_data/reference.fa",
                 help="FASTA of all designed oligo sequences — used for alignment.",
             )
 
@@ -142,13 +144,13 @@ if page == "📤 Upload":
         with col1b:
             assoc_bc_str = st.text_input(
                 "Barcode index FASTQ *",
-                placeholder="~/Desktop/creseq_test_data/assoc_bc.fastq.gz",
+                placeholder="~/creseq_test_data/assoc_bc.fastq.gz",
                 help="15bp i5 barcode reads (ENCODE: separate index file). Required unless barcodes are embedded in R1 headers (older MiSeq data).",
             )
         with col2b:
             labels_path_str = st.text_input(
                 "Labels TSV (optional)",
-                placeholder="~/Desktop/creseq_test_data/labels.tsv",
+                placeholder="~/creseq_test_data/labels.tsv",
                 help="TSV with oligo_id + designed_category columns. If omitted all oligos are labelled 'other'.",
             )
     else:
@@ -161,13 +163,13 @@ if page == "📤 Upload":
     with col3:
         dna_path_str = st.text_input(
             "DNA Counting FASTQ *",
-            placeholder="~/Desktop/creseq_test_data/dna_rep1.fastq.gz",
+            placeholder="~/creseq_test_data/dna_rep1.fastq.gz",
             help="15 bp barcode reads from your plasmid pool.",
         )
     with col4:
         rna_paths_str = st.text_input(
             "RNA FASTQs * (comma-separated)",
-            placeholder="~/Desktop/creseq_test_data/rna_rep1.fastq.gz, ~/Desktop/creseq_test_data/rna_rep2.fastq.gz",
+            placeholder="~/creseq_test_data/rna_rep1.fastq.gz, ~/creseq_test_data/rna_rep2.fastq.gz",
             help="One path per replicate, separated by commas.",
         )
 
@@ -177,7 +179,7 @@ if page == "📤 Upload":
         with adv_col1:
             assoc_r2_str = st.text_input(
                 "Association R2 FASTQ (optional)",
-                placeholder="~/Desktop/creseq_test_data/assoc_R2.fastq.gz",
+                placeholder="~/creseq_test_data/assoc_R2.fastq.gz",
                 help="Paired-end R2 oligo reads — improves alignment rate when provided.",
             )
         with adv_col2:

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
@@ -45,7 +46,7 @@ from creseq_mcp.stats.library import (
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-UPLOAD_DIR = Path.home() / ".creseq" / "uploads"
+UPLOAD_DIR = Path(os.environ.get("CRESEQ_UPLOAD_DIR", Path.home() / ".creseq" / "uploads"))
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 mcp = FastMCP(
