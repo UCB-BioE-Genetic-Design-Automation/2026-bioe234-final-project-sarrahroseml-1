@@ -15,6 +15,8 @@ import anthropic
 from creseq_mcp.server import UPLOAD_DIR, _summary
 from creseq_mcp.qc.activity import compute_variant_delta_scores
 from creseq_mcp.qc.motifs import annotate_top_motifs
+from creseq_mcp.motif import extract_sequences_to_fasta, motif_enrichment
+from creseq_mcp.plotting import plot_creseq
 from creseq_mcp.qc.library import (
     barcode_collision_analysis,
     barcode_complexity,
@@ -39,13 +41,13 @@ from creseq_mcp.stats.library import (
 )
 
 _SYSTEM_PROMPT = (
-    "You are a CRE-seq library QC assistant backed by real analysis tools. "
+    "You are a CRE-seq analysis assistant backed by real tools. "
     "File path arguments are optional — omit them and the tools will automatically use "
-    "whatever data the user has uploaded via the UI. "
-    "Summarise results clearly: state PASS/FAIL and highlight any warnings. "
-    "These tools cover library-side QC only (before RNA analysis). "
-    "For downstream steps (normalisation, activity calling, motif enrichment) tell the user "
-    "those tools are not yet implemented."
+    "data from the upload directory. "
+    "Summarise results clearly: state PASS/FAIL for QC, report active element counts and "
+    "top enriched motifs for downstream steps. "
+    "The full pipeline order is: library QC → activity report → extract sequences → "
+    "motif enrichment → literature search. Run tools in that order when asked."
 )
 
 def _p(args: dict, key: str, filename: str) -> str:
@@ -267,6 +269,80 @@ _TOOLS: list[dict] = [
         },
     },
     {
+        "name": "tool_extract_sequences",
+        "description": (
+            "Extract active and background CRE sequences to FASTA files. "
+            "Reads activity_results.tsv (needs 'active' and 'pvalue' columns) and "
+            "design_manifest.tsv (needs 'sequence' column). Writes active.fa and "
+            "background.fa to the upload directory. Run before tool_motif_enrichment."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "classified_table": {"type": "string", "description": "Path to activity_results.tsv (optional)"},
+                "sequence_source": {"type": "string", "description": "Path to design_manifest.tsv with sequences (optional)"},
+                "active_output": {"type": "string", "description": "Output path for active sequences FASTA (default: active.fa)"},
+                "background_output": {"type": "string", "description": "Output path for background sequences FASTA (default: background.fa)"},
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "tool_motif_enrichment",
+        "description": (
+            "Scan active and background FASTA sequences against JASPAR PWMs and test "
+            "for TF motif enrichment using one-sided Fisher's exact test + BH FDR. "
+            "Run after tool_extract_sequences. Returns the top enriched motifs."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "active_fasta": {"type": "string", "description": "Path to active sequences FASTA (default: active.fa in upload dir)"},
+                "background_fasta": {"type": "string", "description": "Path to background sequences FASTA (default: background.fa in upload dir)"},
+                "motif_database": {"type": "string", "description": "JASPAR collection (default: JASPAR2024)"},
+                "score_threshold": {"type": "number", "description": "PWM score threshold 0-1 (default: 0.8)"},
+                "output_path": {"type": "string", "description": "Output path for enrichment TSV (optional)"},
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "tool_plot_creseq",
+        "description": (
+            "Generate a publication-quality CRE-seq plot and save it as a PNG. "
+            "plot_type options: 'volcano' (activity vs. -log10 p-value), "
+            "'ranked_activity' (elements ranked by activity), "
+            "'replicate_correlation' (RNA rep1 vs. rep2), "
+            "'annotation_boxplot' (activity by element category), "
+            "'motif_dotplot' (enrichment dot plot). "
+            "Returns the saved file path."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "data_file": {"type": "string", "description": "Path to input TSV (activity_results.tsv for most plots)"},
+                "plot_type": {
+                    "type": "string",
+                    "enum": ["volcano", "ranked_activity", "replicate_correlation", "annotation_boxplot", "motif_dotplot"],
+                    "description": "Type of plot to generate",
+                },
+                "output_path": {"type": "string", "description": "Output PNG path (default: plot.png)"},
+                "highlight_ids": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Oligo IDs to highlight on the plot (optional)",
+                },
+                "neg_control_ids": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Negative control IDs to mark distinctly (optional)",
+                },
+                "annotation_file": {"type": "string", "description": "Path to annotation TSV for boxplot (optional)"},
+            },
+            "required": ["data_file", "plot_type"],
+        },
+    },
+    {
         "name": "tool_rank_cre_candidates",
         "description": (
             "Rank CRE candidates by activity strength and statistical confidence. "
@@ -452,6 +528,27 @@ _DISPATCH: dict[str, Any] = {
         _p(a, "activity_results_path", "activity_results.tsv"),
         _p(a, "design_manifest_path", "design_manifest.tsv"),
         upload_dir=UPLOAD_DIR,
+    ),
+    "tool_extract_sequences": lambda a: extract_sequences_to_fasta(
+        classified_table=_p(a, "classified_table", "activity_results.tsv"),
+        sequence_source=_p(a, "sequence_source", "design_manifest.tsv"),
+        active_output=a.get("active_output", str(UPLOAD_DIR / "active.fa")),
+        background_output=a.get("background_output", str(UPLOAD_DIR / "background.fa")),
+    ),
+    "tool_motif_enrichment": lambda a: motif_enrichment(
+        active_fasta=a.get("active_fasta", str(UPLOAD_DIR / "active.fa")),
+        background_fasta=a.get("background_fasta", str(UPLOAD_DIR / "background.fa")),
+        motif_database=a.get("motif_database", "JASPAR2024"),
+        score_threshold=a.get("score_threshold", 0.8),
+        output_path=a.get("output_path", str(UPLOAD_DIR / "motif_enrichment.tsv")),
+    ),
+    "tool_plot_creseq": lambda a: plot_creseq(
+        data_file=a["data_file"],
+        plot_type=a["plot_type"],
+        output_path=a.get("output_path", str(UPLOAD_DIR / "plot.png")),
+        highlight_ids=a.get("highlight_ids"),
+        neg_control_ids=a.get("neg_control_ids"),
+        annotation_file=a.get("annotation_file"),
     ),
     "tool_rank_cre_candidates": lambda a: rank_cre_candidates(
         _p(a, "activity_table_path", "activity_results.tsv"),
